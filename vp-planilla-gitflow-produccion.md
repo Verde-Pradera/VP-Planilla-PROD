@@ -700,7 +700,7 @@ Los tests usan Postgres efímera directamente — no necesitan credenciales de S
 1. Crear cuenta en uptimerobot.com
 2. Add New Monitor:
    Type:     HTTP(s)
-   URL:      https://api.tudominio.com/api/health
+   URL:      https://api.tudominio.com/health
    Interval: 14 minutos
 ```
 

@@ -43,6 +43,12 @@ services:
       postgres:
         condition: service_healthy
     command: sh -c "pnpm prisma migrate deploy && pnpm dev"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   frontend:
     build:
@@ -59,7 +65,8 @@ services:
       - ./src/frontend/src:/app/src
       - /app/node_modules
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   postgres_data:
