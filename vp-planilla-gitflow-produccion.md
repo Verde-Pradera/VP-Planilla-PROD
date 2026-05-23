@@ -114,7 +114,7 @@ Dentro del repo:
 Repo → Settings → Collaborators and teams → Add people
 - Alejandro León → Maintainer
 ```
-A
+
 ---
 
 ## 3. Configuración del Repositorio
