@@ -14,13 +14,15 @@
 4. [Protección de Ramas](#4-protección-de-ramas)
 5. [Docker Compose — Entorno Local](#5-docker-compose--entorno-local)
 6. [Pipeline CI/CD con GitHub Actions](#6-pipeline-cicd-con-github-actions)
-7. [Producción — Vercel y Render](#7-producción--vercel-y-render)
+7. [Producción — Vercel y Render](#7-producción--vercel-y-render) *(pendiente)*
 8. [Variables de Entorno por Contexto](#8-variables-de-entorno-por-contexto)
 9. [Flujo de Trabajo Diario](#9-flujo-de-trabajo-diario)
 10. [Trabajando con Agentes (Claude Code)](#10-trabajando-con-agentes-claude-code)
 11. [Manejo de Hotfixes](#11-manejo-de-hotfixes)
-12. [Checklist Pre-Producción](#12-checklist-pre-producción)
-13. [Comandos de Referencia Rápida](#13-comandos-de-referencia-rápida)
+12. [Sentry — Monitoreo de Errores](#12-sentry--monitoreo-de-errores)
+13. [Checklist Pre-Producción](#13-checklist-pre-producción)
+14. [Rollback y Recuperación](#14-rollback-y-recuperación)
+15. [Comandos de Referencia Rápida](#15-comandos-de-referencia-rápida)
 
 ---
 
@@ -35,7 +37,7 @@
 │   ──────────────────────          ──────              ──────────    │
 │                                                                      │
 │   frontend  :3000                 Actions corre       Vercel        │
-│   backend   :4000    ──push──►    tests en cada  ──►  (solo main)   │
+│   backend   :3001    ──push──►    tests en cada  ──►  (solo main)   │
 │   postgres  :5432                 PR                               │
 │                                                                      │
 │                                                       Render        │
@@ -139,19 +141,22 @@ A partir de aquí, `develop` es la rama de integración. Todo trabajo nuevo part
 vp-planilla/
 ├── .github/
 │   └── workflows/
+│       ├── ci-reusable.yml      ← workflow compartido (reutilizable)
 │       ├── ci-develop.yml       ← CI para PRs hacia develop
 │       └── ci-main.yml          ← CI para PRs hacia main
-├── backend/
-│   ├── src/
-│   ├── prisma/
-│   ├── Dockerfile.dev
-│   ├── package.json
-│   └── .env.example
-├── frontend/
-│   ├── app/  (o pages/)
-│   ├── Dockerfile.dev
-│   ├── package.json
-│   └── .env.example
+├── src/
+│   ├── backend/
+│   │   ├── src/
+│   │   ├── prisma/
+│   │   ├── Dockerfile.dev
+│   │   ├── package.json
+│   │   └── .env.example
+│   ├── frontend/
+│   │   ├── src/
+│   │   ├── Dockerfile.dev
+│   │   ├── package.json
+│   │   └── .env.example
+│   └── DB/                      ← scripts de base de datos
 ├── docker-compose.yml
 ├── .gitignore
 └── README.md
@@ -201,21 +206,61 @@ Thumbs.db
 
 Estos SÍ se commitean — documentan qué variables necesita cada servicio.
 
-`backend/.env.example`:
+`src/backend/.env.example`:
 ```env
-DATABASE_URL="postgresql://user:password@host:5432/db"
-JWT_SECRET="cambiar-en-produccion"
-JWT_EXPIRES_IN="8h"
-ALLOWED_ORIGIN="http://localhost:3000"
-RESEND_API_KEY="re_..."
+# ─── Core ────────────────────────────────────────────────────────────────────
 NODE_ENV="development"
-PORT=4000
+PORT=3001
+DATABASE_URL="postgresql://user:password@localhost:5432/vp_planilla_dev"
+
+# ─── JWT ─────────────────────────────────────────────────────────────────────
+# Generar con: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+JWT_SECRET="cambiar-en-produccion"
+JWT_EXPIRES_IN="1d"
+JWT_REFRESH_SECRET="cambiar-en-produccion-diferente-al-jwt-secret"
+JWT_REFRESH_EXPIRES_IN="15d"
+
+# ─── CORS ────────────────────────────────────────────────────────────────────
+# Lista separada por comas
+ALLOWED_ORIGINS="http://localhost:3000"
+
+# ─── Email ───────────────────────────────────────────────────────────────────
+# Opción A: Resend (recomendado para producción)
+RESEND_API_KEY=""
+
+# Opción B: SMTP genérico
+SMTP_HOST=""
+SMTP_PORT=587
+SMTP_USER=""
+SMTP_PASS=""
+SMTP_FROM=""
+SMTP_SECURE=false
+SMTP_TLS=false
+
+# ─── Reportes ────────────────────────────────────────────────────────────────
+REPORTS_OUTPUT_DIR=""
+REPORTS_ENTERPRISE_NAME="VP-Planillas"
+REPORTS_ENTERPRISE_TAX_ID=""
+
+# ─── Sentry ───────────────────────────────────────────────────────────────────
+# Obtener en: sentry.io → Project Settings → Client Keys (DSN)
+# Dejar vacío en desarrollo local si no se quiere reportar errores a Sentry.
+SENTRY_DSN=""
 ```
 
-`frontend/.env.example`:
+`src/frontend/.env.example`:
 ```env
-NEXT_PUBLIC_API_URL="http://localhost:4000"
-NODE_ENV="development"
+# ─── API ─────────────────────────────────────────────────────────────────────
+NEXT_PUBLIC_API_URL="http://localhost:3001"
+
+# ─── OpenWeather ──────────────────────────────────────────────────────────────
+# Obtener en: openweathermap.org → API keys
+NEXT_PUBLIC_OPENWEATHER_API_KEY=""
+
+# ─── Sentry ───────────────────────────────────────────────────────────────────
+# Obtener en: sentry.io → Project Settings → Client Keys (DSN)
+# Dejar vacío en desarrollo local si no se quiere reportar errores a Sentry.
+NEXT_PUBLIC_SENTRY_DSN=""
 ```
 
 ---
@@ -274,8 +319,6 @@ Todo el desarrollo ocurre aquí. Docker levanta frontend, backend y base de dato
 En la raíz del repo:
 
 ```yaml
-version: '3.9'
-
 services:
 
   postgres:
@@ -298,43 +341,43 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: ./src/backend
       dockerfile: Dockerfile.dev
     container_name: vp-planilla-backend
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      - "3001:3001"
     environment:
       DATABASE_URL: "postgresql://vp_user:vp_password@postgres:5432/vp_planilla_dev"
       JWT_SECRET: "dev-secret-local"
-      JWT_EXPIRES_IN: "8h"
-      ALLOWED_ORIGIN: "http://localhost:3000"
+      JWT_EXPIRES_IN: "1d"
+      JWT_REFRESH_SECRET: "dev-refresh-secret-local"
+      JWT_REFRESH_EXPIRES_IN: "15d"
+      ALLOWED_ORIGINS: "http://localhost:3000"
       NODE_ENV: "development"
-      PORT: 4000
+      PORT: 3001
     volumes:
-      - ./backend/src:/app/src
-      - ./backend/prisma:/app/prisma
+      - ./src/backend/src:/app/src
+      - ./src/backend/prisma:/app/prisma
       - /app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
-    command: sh -c "npx prisma migrate deploy && pnpm dev"
+    command: sh -c "pnpm prisma migrate deploy && pnpm dev"
 
   frontend:
     build:
-      context: ./frontend
+      context: ./src/frontend
       dockerfile: Dockerfile.dev
     container_name: vp-planilla-frontend
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: "http://localhost:4000"
+      NEXT_PUBLIC_API_URL: "http://localhost:3001"
       NODE_ENV: "development"
     volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/app:/app/app
-      - ./frontend/pages:/app/pages
+      - ./src/frontend/src:/app/src
       - /app/node_modules
     depends_on:
       - backend
@@ -343,10 +386,10 @@ volumes:
   postgres_data:
 ```
 
-### backend/Dockerfile.dev
+### src/backend/Dockerfile.dev
 
 ```dockerfile
-FROM node:20-alpine
+FROM node:22-alpine
 
 RUN npm install -g pnpm
 
@@ -360,13 +403,13 @@ RUN pnpm prisma generate
 
 COPY . .
 
-EXPOSE 4000
+EXPOSE 3001
 ```
 
-### frontend/Dockerfile.dev
+### src/frontend/Dockerfile.dev
 
 ```dockerfile
-FROM node:20-alpine
+FROM node:22-alpine
 
 RUN npm install -g pnpm
 
@@ -401,10 +444,10 @@ docker compose down
 docker compose down -v
 
 # Correr una migración nueva
-docker compose exec backend npx prisma migrate dev --name nombre-migracion
+docker compose exec backend pnpm prisma migrate dev --name nombre-migracion
 
 # Abrir Prisma Studio
-docker compose exec backend npx prisma studio
+docker compose exec backend pnpm prisma studio
 
 # Correr tests dentro del contenedor
 docker compose exec backend pnpm test
@@ -435,16 +478,23 @@ Docker es una herramienta de tu máquina. Git es el control del código. Son ind
 
 GitHub Actions valida que los tests pasen antes de permitir cualquier merge. Usa su propia instancia de Postgres efímera — no toca Supabase de producción.
 
-### ci-develop.yml
+Los tres archivos comparten la lógica de tests: `ci-reusable.yml` contiene todo el trabajo real; `ci-develop.yml` y `ci-main.yml` son disparadores que lo llaman.
 
-`.github/workflows/ci-develop.yml`:
+### ci-reusable.yml
+
+`.github/workflows/ci-reusable.yml`:
 
 ```yaml
-name: CI — develop
+name: CI — Reusable
 
 on:
-  pull_request:
-    branches: [develop]
+  workflow_call:
+    inputs:
+      frontend_api_url:
+        description: 'NEXT_PUBLIC_API_URL para el build del frontend'
+        required: false
+        type: string
+        default: 'http://localhost:3001'
 
 jobs:
   test-backend:
@@ -468,20 +518,20 @@ jobs:
 
     defaults:
       run:
-        working-directory: ./backend
+        working-directory: ./src/backend
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v4
         with:
-          version: 8
+          version: 9
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
-          cache-dependency-path: backend/pnpm-lock.yaml
+          cache-dependency-path: src/backend/pnpm-lock.yaml
 
       - name: Instalar dependencias
         run: pnpm install
@@ -499,6 +549,7 @@ jobs:
         env:
           DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
           JWT_SECRET: "ci-test-secret"
+          JWT_REFRESH_SECRET: "ci-refresh-test-secret"
           NODE_ENV: test
 
       - name: Build
@@ -510,31 +561,49 @@ jobs:
 
     defaults:
       run:
-        working-directory: ./frontend
+        working-directory: ./src/frontend
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v4
         with:
-          version: 8
+          version: 9
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
+          cache-dependency-path: src/frontend/pnpm-lock.yaml
 
       - name: Instalar dependencias
         run: pnpm install
 
       - name: Correr tests
         run: pnpm test
+        env:
+          NEXT_PUBLIC_API_URL: "http://localhost:3001"
 
       - name: Build
         run: pnpm build
         env:
-          NEXT_PUBLIC_API_URL: "http://localhost:4000"
+          NEXT_PUBLIC_API_URL: ${{ inputs.frontend_api_url }}
+```
+
+### ci-develop.yml
+
+`.github/workflows/ci-develop.yml`:
+
+```yaml
+name: CI — develop
+
+on:
+  pull_request:
+    branches: [develop]
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci-reusable.yml
 ```
 
 ### ci-main.yml
@@ -549,126 +618,49 @@ on:
     branches: [main]
 
 jobs:
-  test-backend:
-    name: test-backend
-    runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: vp_user
-          POSTGRES_PASSWORD: vp_password
-          POSTGRES_DB: vp_planilla_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 5
-
-    defaults:
-      run:
-        working-directory: ./backend
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 8
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-          cache-dependency-path: backend/pnpm-lock.yaml
-
-      - name: Instalar dependencias
-        run: pnpm install
-
-      - name: Generar cliente Prisma
-        run: pnpm prisma generate
-
-      - name: Correr migraciones
-        run: pnpm prisma migrate deploy
-        env:
-          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
-
-      - name: Correr tests
-        run: pnpm test
-        env:
-          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
-          JWT_SECRET: "ci-test-secret"
-          NODE_ENV: test
-
-      - name: Build
-        run: pnpm build
-
-  test-frontend:
-    name: test-frontend
-    runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: ./frontend
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 8
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-
-      - name: Instalar dependencias
-        run: pnpm install
-
-      - name: Correr tests
-        run: pnpm test
-
-      - name: Build
-        run: pnpm build
-        env:
-          NEXT_PUBLIC_API_URL: ${{ secrets.PROD_API_URL }}
+  ci:
+    uses: ./.github/workflows/ci-reusable.yml
+    with:
+      frontend_api_url: ${{ vars.PROD_API_URL }}
 ```
 
-### Secrets en GitHub Actions
+### Variables en GitHub Actions
 
 ```
-Repo → Settings → Secrets and variables → Actions → New repository secret
+Repo → Settings → Variables → Actions → New repository variable
 
 PROD_API_URL    → https://api.tudominio.com
 ```
 
-Los tests usan Postgres efímera directamente — no necesitan secrets de Supabase.
+> Se usa `vars` (no `secrets`) porque la URL del API no es un dato sensible — ya es pública una vez que el dominio está activo.
+
+Los tests usan Postgres efímera directamente — no necesitan credenciales de Supabase.
 
 ---
 
 ## 7. Producción — Vercel y Render
+
+> ⚠️ **PENDIENTE DE IMPLEMENTAR** — Los servicios de esta sección aún no están configurados. Este bloque es el blueprint a seguir antes del primer deploy real.
 
 ### Vercel — Solo main
 
 ```
 1. Crear cuenta en vercel.com con la cuenta de GitHub de la organización
 2. Add New Project → importar repo desde la organización
-3. Seleccionar la carpeta frontend como root directory
+3. Root Directory: src/frontend
 4. Vercel detecta Next.js automáticamente
 5. En Settings → Git → desactivar deploys de otras ramas:
-   
+
    Settings → Git → "Ignored Build Step"
    Agregar este comando:
    if [ "$VERCEL_GIT_COMMIT_REF" != "main" ]; then exit 0; fi
 
+   (exit 0 = cancelar el build en la lógica de Vercel — es correcto aunque parezca invertido)
+
 6. Variables de entorno en Settings → Environment Variables:
-   NEXT_PUBLIC_API_URL = https://api.tudominio.com
-   (marcar solo como "Production")
+   NEXT_PUBLIC_API_URL        = https://api.tudominio.com   → solo Production
+   NEXT_PUBLIC_SENTRY_DSN     = dsn del proyecto frontend   → solo Production
+   NEXT_PUBLIC_OPENWEATHER_API_KEY = clave de OpenWeather   → solo Production
 
 7. Dominio en Settings → Domains:
    Agregar tudominio.com
@@ -680,21 +672,26 @@ Los tests usan Postgres efímera directamente — no necesitan secrets de Supaba
 ```
 1. Crear cuenta en render.com con GitHub de la organización
 2. New → Web Service → conectar repo
-3. Seleccionar carpeta backend
+3. Root Directory: src/backend
 4. Configuración:
    Name:          vp-planilla-api
    Branch:        main
-   Build Command: cd backend && pnpm install && pnpm prisma generate
-   Start Command: cd backend && pnpm prisma migrate deploy && pnpm start
-   
+   Build Command: pnpm install && pnpm prisma generate
+   Start Command: pnpm prisma migrate deploy && pnpm start
+
 5. Variables de entorno:
-   DATABASE_URL    → connection string Supabase (puerto 6543, pooler)
-   JWT_SECRET      → secret seguro generado con crypto
-   JWT_EXPIRES_IN  → 8h
-   ALLOWED_ORIGIN  → https://tudominio.com
-   RESEND_API_KEY  → clave de Resend
-   NODE_ENV        → production
-   PORT            → 4000
+   DATABASE_URL            → connection string Supabase (puerto 6543, pooler)
+   JWT_SECRET              → secret seguro generado con crypto
+   JWT_EXPIRES_IN          → 1d
+   JWT_REFRESH_SECRET      → secret distinto al JWT_SECRET
+   JWT_REFRESH_EXPIRES_IN  → 15d
+   ALLOWED_ORIGINS         → https://tudominio.com
+   RESEND_API_KEY          → clave de Resend (o configurar SMTP_*)
+   SENTRY_DSN              → dsn del proyecto backend
+   REPORTS_ENTERPRISE_NAME → nombre de la empresa
+   REPORTS_ENTERPRISE_TAX_ID → cédula jurídica
+   NODE_ENV                → production
+   PORT                    → 3001
 ```
 
 ### UptimeRobot — Evitar cold starts
@@ -707,13 +704,15 @@ Los tests usan Postgres efímera directamente — no necesitan secrets de Supaba
    Interval: 14 minutos
 ```
 
-Agregar el endpoint en Express:
+Agregar el endpoint en Express si aún no existe:
 
 ```typescript
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 ```
+
+> Render (plan free) duerme el servicio tras 15 minutos de inactividad. 14 minutos garantiza que nunca llegue a ese punto.
 
 ### DNS en name.com
 
@@ -734,15 +733,20 @@ SSL se activa solo en Vercel y Render. No hay nada que configurar.
 |---|---|---|---|
 | `DATABASE_URL` | postgres:5432 (Docker) | localhost:5432 (efímera) | Supabase :6543 (pooler) |
 | `JWT_SECRET` | dev-secret-local | ci-test-secret | secret aleatorio seguro |
+| `JWT_REFRESH_SECRET` | dev-refresh-secret-local | ci-refresh-test-secret | secret distinto al JWT_SECRET |
 | `NODE_ENV` | development | test | production |
-| `ALLOWED_ORIGIN` | localhost:3000 | — | tudominio.com |
-| `NEXT_PUBLIC_API_URL` | localhost:4000 | localhost:4000 | api.tudominio.com |
+| `ALLOWED_ORIGINS` | http://localhost:3000 | — | https://tudominio.com |
+| `NEXT_PUBLIC_API_URL` | http://localhost:3001 | http://localhost:3001 | https://api.tudominio.com |
+| `SENTRY_DSN` | vacío | — | DSN de producción |
+| `NEXT_PUBLIC_SENTRY_DSN` | vacío | — | DSN de producción |
 
 ### Generar un secret seguro para producción
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 ```
+
+Generar uno para `JWT_SECRET` y otro distinto para `JWT_REFRESH_SECRET`.
 
 ---
 
@@ -767,7 +771,7 @@ docker compose up
 ```bash
 # El stack corre en:
 # frontend → localhost:3000
-# backend  → localhost:4000
+# backend  → localhost:3001
 # postgres → localhost:5432
 
 # Hot reload activo — los cambios se reflejan solos
@@ -928,7 +932,60 @@ El hotfix es el único caso donde se abre PR directo a `main`. Siempre con PR, n
 
 ---
 
-## 12. Checklist Pre-Producción
+## 12. Sentry — Monitoreo de Errores
+
+El proyecto ya tiene Sentry integrado en ambos servicios:
+- **Backend**: `src/backend/instrument.js` (cargado con `--import` en dev y start)
+- **Frontend**: `src/frontend/src/instrumentation.ts` (Next.js instrumentation hook)
+
+Sin configurar `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN`, Sentry simplemente no reporta nada — el código no explota.
+
+### Configuración inicial en sentry.io
+
+```
+1. sentry.io → New Project
+2. Crear dos proyectos:
+   - Platform: Node.js   → Name: vp-planilla-backend
+   - Platform: Next.js   → Name: vp-planilla-frontend
+3. Copiar el DSN de cada uno:
+   Project Settings → Client Keys (DSN)
+```
+
+### Variables necesarias por entorno
+
+| Variable | Servicio | Dónde configurar |
+|---|---|---|
+| `SENTRY_DSN` | Backend | Render → Environment Variables |
+| `NEXT_PUBLIC_SENTRY_DSN` | Frontend | Vercel → Environment Variables → Production |
+
+En desarrollo local (`.env`), dejar vacías para no enviar errores locales a Sentry:
+
+```env
+# src/backend/.env
+SENTRY_DSN=""
+
+# src/frontend/.env.local
+NEXT_PUBLIC_SENTRY_DSN=""
+```
+
+### Environments
+
+Sentry separa los errores por ambiente basándose en `NODE_ENV`. Configurar alertas solo para `production` para no recibir ruido de los pipelines de CI.
+
+```
+sentry.io → Project Settings → Alerts → crear alerta para environment: production
+```
+
+### Ver errores en producción
+
+```
+sentry.io → tu organización → vp-planilla-backend → Issues
+sentry.io → tu organización → vp-planilla-frontend → Issues
+```
+
+---
+
+## 13. Checklist Pre-Producción
 
 ### Código
 
@@ -936,14 +993,16 @@ El hotfix es el único caso donde se abre PR directo a `main`. Siempre con PR, n
 ☐ Ningún .env commiteado en el historial
   → Verificar: git log --all --full-history -- "**/.env"
 ☐ Todos los secrets en variables de entorno, no hardcodeados
-☐ CORS restringido al dominio de producción
+☐ CORS restringido al dominio de producción (ALLOWED_ORIGINS)
 ☐ helmet y express-rate-limit instalados y configurados
 ☐ Manejo de errores no expone stack traces en producción
-☐ JWT con expiración definida
-☐ prisma migrate deploy en el script de start (nunca migrate dev)
+☐ JWT con expiración definida (JWT_SECRET y JWT_REFRESH_SECRET distintos)
+☐ prisma migrate deploy en el start command (nunca migrate dev)
 ☐ Endpoint GET /api/health que retorne { status: "ok" }
-☐ pnpm-lock.yaml commiteado
-☐ .env.example actualizado en backend y frontend
+☐ pnpm-lock.yaml commiteado en backend y frontend
+☐ .env.example actualizado en src/backend y src/frontend
+☐ SENTRY_DSN configurado en Render
+☐ NEXT_PUBLIC_SENTRY_DSN configurado en Vercel
 ```
 
 ### GitHub
@@ -952,8 +1011,8 @@ El hotfix es el único caso donde se abre PR directo a `main`. Siempre con PR, n
 ☐ Repo transferido a la organización
 ☐ Ramas main y develop creadas
 ☐ Branch protection rules activas en main y develop
-☐ Workflows de CI en .github/workflows/
-☐ Secret PROD_API_URL configurado en el repo
+☐ Workflows de CI en .github/workflows/ (ci-reusable, ci-develop, ci-main)
+☐ Variable PROD_API_URL configurada en el repo
 ☐ Miembros del equipo con roles correctos
 ```
 
@@ -962,19 +1021,22 @@ El hotfix es el único caso donde se abre PR directo a `main`. Siempre con PR, n
 ```
 ☐ Supabase: proyecto de producción creado
 ☐ Supabase: connection string usa pooler (puerto 6543)
-☐ Render: Web Service conectado a main con variables de entorno
-☐ Vercel: proyecto conectado al repo de la organización
+☐ Render: Web Service con Root Directory = src/backend
+☐ Render: rama main, variables de entorno completas
+☐ Vercel: Root Directory = src/frontend
 ☐ Vercel: deploy desactivado para ramas que no sean main
 ☐ Vercel: variables de entorno de producción configuradas
 ☐ Vercel: dominio agregado y DNS configurado en name.com
 ☐ UptimeRobot: monitor apuntando a /api/health cada 14 minutos
+☐ Sentry: dos proyectos creados (backend y frontend)
+☐ Sentry: alertas configuradas solo para environment production
 ```
 
 ### Antes del primer deploy real
 
 ```
 ☐ docker compose up → todo levanta sin errores
-☐ pnpm test → todos los tests pasan localmente
+☐ pnpm test → todos los tests pasan localmente (desde src/backend y src/frontend)
 ☐ pnpm build → sin errores en backend y frontend
 ☐ Flujo completo probado manualmente en Docker
 ☐ Backup manual de la DB antes del primer deploy
@@ -983,7 +1045,82 @@ El hotfix es el único caso donde se abre PR directo a `main`. Siempre con PR, n
 
 ---
 
-## 13. Comandos de Referencia Rápida
+## 14. Rollback y Recuperación
+
+### Vercel — Rollback del frontend
+
+El rollback en Vercel es instantáneo y no requiere tocar código.
+
+```
+1. Vercel Dashboard → tu proyecto → Deployments
+2. Buscar el último deployment exitoso
+3. Click en los tres puntos → "Promote to Production"
+```
+
+O via CLI:
+
+```bash
+vercel rollback
+```
+
+### Render — Rollback del backend
+
+```
+1. Render Dashboard → vp-planilla-api → Events
+2. Buscar el deploy anterior exitoso
+3. Click en "Redeploy" en ese commit específico
+```
+
+Alternativa desde Git si el problema está en el código:
+
+```bash
+# Revertir el commit problemático (crea un commit nuevo que deshace el anterior)
+git revert HEAD
+git push origin main
+# Render detecta el push a main y despliega automáticamente
+```
+
+> No uses `git reset --hard` en `main`. Render y Vercel reaccionan al push, no al estado local del repo — un reset forzado no ayuda y puede generar inconsistencias.
+
+### Base de datos — Consideraciones
+
+Render ejecuta `pnpm prisma migrate deploy` en el start command. Las migraciones de Prisma **no tienen rollback automático**.
+
+```
+⚠️ Una migración destructiva (DROP COLUMN, DROP TABLE) no se puede deshacer
+   automáticamente. Si el nuevo código falla, la base ya cambió.
+```
+
+Estrategia recomendada:
+
+```
+Antes de cualquier deploy con migración:
+1. Supabase Dashboard → Database Backups → tomar snapshot manual
+
+Si la migración falla y hay que restaurar:
+2. Supabase Dashboard → Backups → Restore to point in time
+
+Para evitar el problema:
+3. Diseñar migraciones aditivas primero:
+   - Sprint 1: agregar columna nullable (sin romper el código viejo)
+   - Sprint 2: rellenar la columna
+   - Sprint 3: hacer la columna NOT NULL o eliminar la columna anterior
+```
+
+### Git — Revertir un merge a main
+
+```bash
+# Ver el historial para identificar el merge a revertir
+git log --oneline -10
+
+# Revertir el merge commit (-m 1 mantiene el lado de main)
+git revert -m 1 <hash-del-merge>
+git push origin main
+```
+
+---
+
+## 15. Comandos de Referencia Rápida
 
 ### Git
 
@@ -1027,9 +1164,22 @@ docker compose logs -f frontend
 
 # Comandos dentro de contenedores
 docker compose exec backend pnpm test
-docker compose exec backend npx prisma migrate dev --name nombre
-docker compose exec backend npx prisma studio
+docker compose exec backend pnpm prisma migrate dev --name nombre
+docker compose exec backend pnpm prisma studio
 docker compose exec backend sh
+```
+
+### Tests y typecheck
+
+```bash
+# Desde src/backend/
+pnpm test
+npx tsc --noEmit
+
+# Desde src/frontend/
+pnpm test
+npx tsc --noEmit
+npx next lint
 ```
 
 ---

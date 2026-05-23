@@ -1,0 +1,103 @@
+name: CI — Reusable
+
+on:
+  workflow_call:
+    inputs:
+      frontend_api_url:
+        description: 'NEXT_PUBLIC_API_URL para el build del frontend'
+        required: false
+        type: string
+        default: 'http://localhost:3001'
+
+jobs:
+  test-backend:
+    name: test-backend
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vp_user
+          POSTGRES_PASSWORD: vp_password
+          POSTGRES_DB: vp_planilla_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: ./src/backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: src/backend/pnpm-lock.yaml
+
+      - name: Instalar dependencias
+        run: pnpm install
+
+      - name: Generar cliente Prisma
+        run: pnpm prisma generate
+
+      - name: Correr migraciones
+        run: pnpm prisma migrate deploy
+        env:
+          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
+
+      - name: Correr tests
+        run: pnpm test
+        env:
+          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
+          JWT_SECRET: "ci-test-secret"
+          JWT_REFRESH_SECRET: "ci-refresh-test-secret"
+          NODE_ENV: test
+
+      - name: Build
+        run: pnpm build
+
+  test-frontend:
+    name: test-frontend
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./src/frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: src/frontend/pnpm-lock.yaml
+
+      - name: Instalar dependencias
+        run: pnpm install
+
+      - name: Correr tests
+        run: pnpm test
+        env:
+          NEXT_PUBLIC_API_URL: "http://localhost:3001"
+
+      - name: Build
+        run: pnpm build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ inputs.frontend_api_url }}
