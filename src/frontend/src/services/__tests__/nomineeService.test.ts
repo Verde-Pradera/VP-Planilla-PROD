@@ -1,9 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NomineeService } from '../nomineeService';
+import { http } from '../http';
 
-vi.mock('../http', () => {
-  const postMock = vi.fn();
-  const getMock = vi.fn();
+jest.mock('../http', () => {
+  const postMock = jest.fn();
+  const getMock = jest.fn();
   return {
     http: {
       post: postMock,
@@ -12,8 +12,7 @@ vi.mock('../http', () => {
   };
 });
 
-const { http } = await import('../http');
-const postMock = vi.mocked(http.post);
+const postMock = jest.mocked(http.post);
 
 describe('NomineeService.calculateAguinaldo', () => {
   beforeEach(() => {
