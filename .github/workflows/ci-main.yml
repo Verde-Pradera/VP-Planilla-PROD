@@ -1,0 +1,11 @@
+name: CI — main (producción)
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci-reusable.yml
+    with:
+      frontend_api_url: ${{ vars.PROD_API_URL }}

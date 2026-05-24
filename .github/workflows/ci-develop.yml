@@ -1,0 +1,9 @@
+name: CI — develop
+
+on:
+  pull_request:
+    branches: [develop]
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci-reusable.yml
