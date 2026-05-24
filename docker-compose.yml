@@ -1,3 +1,5 @@
+# DEV-ONLY: These credentials are for local Docker containers only.
+# Never use these values in production. Production secrets go in .env (gitignored).
 services:
 
   postgres:

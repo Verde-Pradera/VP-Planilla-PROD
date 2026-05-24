@@ -9,6 +9,14 @@
 node_modules/
 package-lock.json
 
+# ===== ENVIRONMENT FILES (NEVER COMMIT) =====
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
+
 # ===== BACKEND (Node.js / TypeScript) =====
 # Compiled TypeScript output — regenerate with: cd src/backend && npm run build
 src/backend/dist/
