@@ -115,6 +115,7 @@ export function usePayrollWizard() {
     setDateStart(bounds.start);
     setDateEnd(bounds.end);
     setSelectedMonth(ym);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const selectPeriod = useCallback((period: {
