@@ -35,6 +35,9 @@ import { env } from "./config/env";
 const app = express();
 const PORT = env.PORT;
 
+// Trust Render's reverse proxy so express-rate-limit reads the real client IP
+app.set('trust proxy', 1);
+
 // Health check before any middleware — must be reachable by uptime monitors
 app.get("/health", (_req, res) => {
   res.json({ success: true, message: "Servidor funcionando correctamente" });
