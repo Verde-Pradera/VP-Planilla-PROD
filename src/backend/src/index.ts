@@ -35,6 +35,11 @@ import { env } from "./config/env";
 const app = express();
 const PORT = env.PORT;
 
+// Health check before any middleware — must be reachable by uptime monitors
+app.get("/health", (_req, res) => {
+  res.json({ success: true, message: "Servidor funcionando correctamente" });
+});
+
 // Middlewares básicos
 const allowedOrigins = env.ALLOWED_ORIGINS;
 app.use(cors({
@@ -59,13 +64,6 @@ app.get("/", (_req, res) => {
   res.json({
     success: true,
     message: "API de VP Planillas funcionando 🚀",
-  });
-});
-
-app.get("/health", (_req, res) => {
-  res.json({
-    success: true,
-    message: "Servidor funcionando correctamente",
   });
 });
 
