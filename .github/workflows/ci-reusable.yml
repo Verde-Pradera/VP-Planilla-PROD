@@ -44,30 +44,33 @@ jobs:
           cache: pnpm
           cache-dependency-path: src/backend/pnpm-lock.yaml
 
+      - name: Crear schema verdepradera
+        run: psql "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test" -c 'CREATE SCHEMA IF NOT EXISTS verdepradera;'
+
       - name: Instalar dependencias
         run: pnpm install
         env:
-          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
-          DIRECT_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
+          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test?schema=verdepradera"
+          DIRECT_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test?schema=verdepradera"
 
       - name: Generar cliente Prisma
         run: pnpm prisma generate
         env:
-          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
-          DIRECT_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
+          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test?schema=verdepradera"
+          DIRECT_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test?schema=verdepradera"
 
       - name: Correr migraciones
         run: pnpm prisma migrate deploy
         env:
-          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
-          DIRECT_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
+          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test?schema=verdepradera"
+          DIRECT_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test?schema=verdepradera"
 
       - name: Correr tests
         run: pnpm test
         env:
           # These are throwaway CI-only secrets for ephemeral test containers — not production values.
-          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
-          DIRECT_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
+          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test?schema=verdepradera"
+          DIRECT_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test?schema=verdepradera"
           JWT_SECRET: "ci-test-secret"
           JWT_REFRESH_SECRET: "ci-refresh-test-secret"
           NODE_ENV: test
