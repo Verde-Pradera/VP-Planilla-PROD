@@ -9,7 +9,9 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "prepare": "husky"
+    "prepare": "husky",
+    "db:refresh": "docker compose down -v && docker compose up",
+    "docker:build": "docker compose up --build"
   },
   "repository": {
     "type": "git",

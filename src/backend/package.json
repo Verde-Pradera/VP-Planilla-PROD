@@ -10,6 +10,9 @@
     "dev": "tsx watch --import ./instrument.js src/index.ts",
     "build": "tsc",
     "start": "node --import ./instrument.js dist/index.js",
+    "db:local": "node -e \"const fs=require('fs');fs.copyFileSync('.env.docker','.env');console.log('Conectado: Docker local (localhost:5432)');\"",
+    "db:supabase": "node -e \"const fs=require('fs');fs.copyFileSync('.env.supabase','.env');console.log('Conectado: Supabase (aws-1-us-east-1)');\"",
+    "db:status": "node -e \"const l=require('fs').readFileSync('.env','utf8').split('\\n').find(l=>l.startsWith('DATABASE_URL'));console.log(l&&l.includes('localhost')?'LOCAL — Docker local':'REMOTE — Supabase');\"",
     "db:reset": "tsx src/scripts/resetDb.ts",
     "dbml": "prisma generate",
     "postinstall": "prisma generate"

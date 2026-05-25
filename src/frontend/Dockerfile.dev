@@ -4,8 +4,8 @@ RUN npm install -g pnpm@11.1.1
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --fetch-timeout 300000 --fetch-retries 5
 
 COPY . .
 
