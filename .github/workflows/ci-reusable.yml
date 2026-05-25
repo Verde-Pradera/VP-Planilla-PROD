@@ -49,17 +49,22 @@ jobs:
 
       - name: Generar cliente Prisma
         run: pnpm prisma generate
+        env:
+          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
+          DIRECT_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
 
       - name: Correr migraciones
         run: pnpm prisma migrate deploy
         env:
           DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
+          DIRECT_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
 
       - name: Correr tests
         run: pnpm test
         env:
           # These are throwaway CI-only secrets for ephemeral test containers — not production values.
           DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
+          DIRECT_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
           JWT_SECRET: "ci-test-secret"
           JWT_REFRESH_SECRET: "ci-refresh-test-secret"
           NODE_ENV: test
