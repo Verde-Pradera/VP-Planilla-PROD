@@ -123,6 +123,10 @@ pnpm db:refresh   # borra el volumen Docker y vuelve a crear con seed data
 
 ```bash
 docker compose up          # levanta postgres + backend + frontend
+
+ #IMPORTANTE
+ #Primera vez (o reset total)  →  pnpm db:refresh
+ #Día a día                    →  docker compose up
 ```
 
 Hot-reload activo: los cambios en `src/backend/src/` y `src/frontend/src/` se reflejan solos sin rebuild.
@@ -134,7 +138,7 @@ Hot-reload activo: los cambios en `src/backend/src/` y `src/frontend/src/` se re
 docker compose up postgres -d
 
 # Terminal 2
-cd src/backend && pnpm db:local && pnpm dev
+cd src/backend && pnpm db:local o supabase && pnpm dev
 
 # Terminal 3
 cd src/frontend && pnpm dev
