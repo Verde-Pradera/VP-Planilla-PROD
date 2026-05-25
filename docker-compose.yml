@@ -14,6 +14,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vp_user -d vp_planilla_dev"]
       interval: 5s
@@ -29,7 +30,8 @@ services:
     ports:
       - "3001:3001"
     environment:
-      DATABASE_URL: "postgresql://vp_user:vp_password@postgres:5432/vp_planilla_dev"
+      DATABASE_URL: "postgresql://vp_user:vp_password@postgres:5432/vp_planilla_dev?schema=verdepradera"
+      DIRECT_URL: "postgresql://vp_user:vp_password@postgres:5432/vp_planilla_dev?schema=verdepradera"
       JWT_SECRET: "dev-secret-local"
       JWT_EXPIRES_IN: "1d"
       JWT_REFRESH_SECRET: "dev-refresh-secret-local"
@@ -44,13 +46,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: sh -c "pnpm prisma migrate deploy && pnpm dev"
+    command: sh -c "pnpm prisma migrate deploy && pnpm prisma db seed && pnpm dev"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:3001/health || exit 1"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 10
+      start_period: 60s
 
   frontend:
     build:
@@ -66,9 +68,11 @@ services:
     volumes:
       - ./src/frontend/src:/app/src
       - /app/node_modules
+    command: pnpm dev
     depends_on:
       backend:
         condition: service_healthy
+
 
 volumes:
   postgres_data:

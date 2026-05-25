@@ -126,5 +126,8 @@ graphify-out/
 # Auto-generated file inventories (do not commit)
 tracked_files.txt
 
+# DB seed dumps — contienen datos reales de producción, nunca commitear
+docker/seed-prod.sql
+
 # Frontend TypeScript build cache
 src/frontend/tsconfig.tsbuildinfo

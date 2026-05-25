@@ -6,7 +6,7 @@ WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY prisma ./prisma
-RUN pnpm install
+RUN pnpm install --fetch-timeout 300000 --fetch-retries 5
 
 COPY . .
 
