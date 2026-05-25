@@ -211,7 +211,10 @@ Estos SÍ se commitean — documentan qué variables necesita cada servicio.
 # ─── Core ────────────────────────────────────────────────────────────────────
 NODE_ENV="development"
 PORT=3001
-DATABASE_URL="postgresql://user:password@localhost:5432/vp_planilla_dev"
+# Para Supabase (producción): agregar pgbouncer=true&connection_limit=10 al DATABASE_URL
+DATABASE_URL="postgresql://user:password@localhost:5432/vp_planilla_dev?schema=verdepradera"
+# DIRECT_URL se usa para migraciones (sin connection pooler). En local puede ser igual a DATABASE_URL.
+DIRECT_URL="postgresql://user:password@localhost:5432/vp_planilla_dev?schema=verdepradera"
 
 # ─── JWT ─────────────────────────────────────────────────────────────────────
 # Generar con: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
@@ -524,8 +527,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        # Sin "version:" — lee pnpm@x.x.x del campo packageManager en package.json
 
       - uses: actions/setup-node@v4
         with:
@@ -533,21 +535,35 @@ jobs:
           cache: pnpm
           cache-dependency-path: src/backend/pnpm-lock.yaml
 
+      - name: Crear schema verdepradera
+        # La DB de CI arranca sin schemas personalizados. Producción usa
+        # ?schema=verdepradera en el DATABASE_URL, así que CI debe replicarlo.
+        run: psql "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test" -c 'CREATE SCHEMA IF NOT EXISTS verdepradera;'
+
       - name: Instalar dependencias
         run: pnpm install
+        env:
+          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test?schema=verdepradera"
+          DIRECT_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test?schema=verdepradera"
 
       - name: Generar cliente Prisma
         run: pnpm prisma generate
+        env:
+          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test?schema=verdepradera"
+          DIRECT_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test?schema=verdepradera"
 
       - name: Correr migraciones
         run: pnpm prisma migrate deploy
         env:
-          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
+          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test?schema=verdepradera"
+          DIRECT_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test?schema=verdepradera"
 
       - name: Correr tests
         run: pnpm test
         env:
-          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
+          # Credenciales de Postgres efímera de CI — no son valores de producción.
+          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test?schema=verdepradera"
+          DIRECT_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test?schema=verdepradera"
           JWT_SECRET: "ci-test-secret"
           JWT_REFRESH_SECRET: "ci-refresh-test-secret"
           NODE_ENV: test
@@ -567,8 +583,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+        # Sin "version:" — lee pnpm@x.x.x del campo packageManager en package.json
 
       - uses: actions/setup-node@v4
         with:
@@ -731,7 +746,8 @@ SSL se activa solo en Vercel y Render. No hay nada que configurar.
 
 | Variable | Local (Docker) | CI (Actions) | Producción |
 |---|---|---|---|
-| `DATABASE_URL` | postgres:5432 (Docker) | localhost:5432 (efímera) | Supabase :6543 (pooler) |
+| `DATABASE_URL` | postgres:5432 `?schema=verdepradera` | localhost:5432 `?schema=verdepradera` | Supabase :6543 pooler `?schema=verdepradera` |
+| `DIRECT_URL` | igual que DATABASE_URL | igual que DATABASE_URL | Supabase :5432 directo `?schema=verdepradera` |
 | `JWT_SECRET` | dev-secret-local | ci-test-secret | secret aleatorio seguro |
 | `JWT_REFRESH_SECRET` | dev-refresh-secret-local | ci-refresh-test-secret | secret distinto al JWT_SECRET |
 | `NODE_ENV` | development | test | production |
