@@ -46,6 +46,9 @@ jobs:
 
       - name: Instalar dependencias
         run: pnpm install
+        env:
+          DATABASE_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
+          DIRECT_URL: "postgresql://vp_user:vp_password@localhost:5432/vp_planilla_test"
 
       - name: Generar cliente Prisma
         run: pnpm prisma generate
